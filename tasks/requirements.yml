@@ -1,0 +1,9 @@
+---
+#2DO add python role and PIP
+- name: Install required Python packages
+  pip:
+    name:
+      - requests
+      - dnspython
+    state: present
+  become: true

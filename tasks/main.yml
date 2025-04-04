@@ -1,0 +1,42 @@
+---
+- name: Install required Python packages
+  pip:
+    name:
+      - requests
+      - dnspython
+    state: present
+  become: true
+
+- name: flush DNS
+  command: resolvectl flush-caches
+  become: true
+  when: ansible_os_family == "Debian"
+  ignore_errors: true
+
+- name: check DNS Server
+  command: dig @8.8.8.8 +short NS {{ dns_domain }}
+  register: dns_servers
+  changed_when: false
+  when: dns_domain is defined
+
+- name: Display nameservers
+  debug:
+    var: dns_servers.stdout_lines
+  when: dns_servers is defined
+
+- name: Check if using Netcup nameservers
+  set_fact:
+    is_netcup_dns: "{{ dns_servers.stdout is search('netcup.net') }}"
+  when: dns_servers is defined
+
+- name: Include Netcup DNS tasks
+  include_tasks: netcup.yml
+  when: is_netcup_dns | bool
+
+- name: Display warning if no supported DNS provider found
+  debug:
+    msg: "No supported DNS provider found. Current nameservers: {{ dns_servers.stdout_lines | join(', ') }} Please update DNS manually."
+  when: 
+    - not is_netcup_dns
+    - dns_servers is defined
+

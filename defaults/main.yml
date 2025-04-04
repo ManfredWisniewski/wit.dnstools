@@ -1,0 +1,20 @@
+---
+# Netcup API credentials - more info here:
+# https://helpcenter.netcup.com/de/wiki/general/unsere-api
+netcup_customer_number: ""
+netcup_api_key: ""
+netcup_api_password: ""
+
+netcup_endpoint: "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON"
+
+# Default domain to work with
+dns_domain: ""
+
+# Example structure for dns_records_to_update:
+# dns_records_to_update:
+#   - hostname: "www"
+#     type: "A"
+#     destination: "192.168.1.1"
+#     priority: "0"
+#     deleterecord: "false"
+#     state: "yes"

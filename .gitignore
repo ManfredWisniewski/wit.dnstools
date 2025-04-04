@@ -1,0 +1,1 @@
+.DS_Store\n*.retry\n*.pyc\n__pycache__/\n.pytest_cache/\n.env\n.venv/\n.idea/

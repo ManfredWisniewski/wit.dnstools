@@ -1,0 +1,76 @@
+- name: Login to Netcup DNS API
+  uri:
+    url: "{{ netcup_endpoint }}"
+    method: POST
+    body_format: json
+    headers:
+      Content-Type: "application/json"
+    body:
+      action: "login"
+      param:
+        customerNumber: "{{ netcup_customer_number }}"
+        apiKey: "{{ netcup_api_key }}"
+        apiPassword: "{{ netcup_api_password }}"
+    return_content: yes
+  register: netcup_login
+#  no_log: true
+
+- name: Set API session ID
+  set_fact:
+    netcup_session_id: "{{ netcup_login.msg }}"
+  when: netcup_login is defined
+
+- name: Get DNS records
+  uri:
+    url: "{{ netcup_endpoint }}"
+    method: POST
+    body_format: json
+    body:
+      action: "infoDnsRecords"
+      param:
+        customernumber: "{{ netcup_customer_number }}"
+        apikey: "{{ netcup_api_key }}"
+        apisessionid: "{{ netcup_session_id }}"
+        domainname: "{{ dns_domain }}"
+    return_content: yes
+  register: dns_records
+  when: dns_domain is defined
+
+- name: Update DNS records
+  uri:
+    url: "{{ netcup_endpoint }}"
+    method: POST
+    body_format: json
+    body:
+      action: "updateDnsRecords"
+      param:
+        customernumber: "{{ netcup_customer_number }}"
+        apikey: "{{ netcup_api_key }}"
+        apisessionid: "{{ netcup_session_id }}"
+        domainname: "{{ dns_domain }}"
+        dnsrecords: "{{ dns_records_to_update }}"
+    return_content: yes
+  register: dns_update_result
+  when: 
+    - dns_domain is defined
+    - dns_records_to_update is defined
+
+- name: Display DNS update result
+  debug:
+    var: dns_update_result
+  when: dns_update_result is defined
+
+- name: Logout from Netcup DNS API
+  uri:
+    url: "{{ netcup_endpoint }}"
+    method: POST
+    body_format: json
+    body:
+      action: "logout"
+      param:
+        customernumber: "{{ netcup_customer_number }}"
+        apikey: "{{ netcup_api_key }}"
+        apisessionid: "{{ netcup_session_id }}"
+    return_content: yes
+  when: netcup_session_id is defined
+#  no_log: true
