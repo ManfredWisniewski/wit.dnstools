@@ -1,0 +1,31 @@
+---
+# check hostip task file for wit.dnstools
+
+- name: Ensure dnspython is installed for DNS lookups
+  ansible.builtin.pip:
+    name: dnspython
+    state: present
+  become: false
+  delegate_to: localhost
+
+- name: Check if inventory_hostname is an IP address
+  ansible.builtin.set_fact:
+    is_ip_address: "{{ inventory_hostname | regex_search('^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$') is not none }}"
+
+- name: Skip DNS check for IP addresses
+  ansible.builtin.debug:
+    msg: "Skipping DNS check because inventory_hostname ({{ inventory_hostname }}) is an IP address"
+  when: is_ip_address
+
+- name: Resolve DNS for inventory_hostname
+  ansible.builtin.set_fact:
+    resolved_ip: "{{ lookup('dig', inventory_hostname + '/A') }}"
+  when: not is_ip_address
+
+- name: Check if DNS matches host_vars hostip
+  ansible.builtin.assert:
+    that:
+      - resolved_ip == hostip
+    fail_msg: "DNS for {{ inventory_hostname }} ({{ resolved_ip }}) does not match hostip in host_vars ({{ hostip }})!"
+    success_msg: "DNS for {{ inventory_hostname }} matches hostip in host_vars."
+  when: not is_ip_address

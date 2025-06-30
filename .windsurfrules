@@ -1,0 +1,11 @@
+1. Do not guess. If you do not know something then tell me.
+2. Do not offer to run commands for me. Show me your recommendations but I will run them myself.
+3. Do not explain your solutions to me.
+4. Do not remove my comments.
+5. Use Ansible as the primary programming language
+6. If you are trying something that you have tried just shortly before check if you are stuck in a loop.
+7. Please do not do more than what I ask you to do.
+8. If you are looking up variable references please do not rely on your memory but always check the code.
+9. Variables are stored in host_vars and group_vars
+10. Focus on modular code
+11. Use existing roles where tasks for functionalities already exist
