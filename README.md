@@ -33,3 +33,6 @@ Manage DNS records through the Netcup DNS API.
 - `dns_record_type`: Record type (e.g., 'A')
 - `dns_record_value`: Record value
 
+
+## Sources used for research:
+https://github.com/couchtyp/certbot-dns-schlundtech
