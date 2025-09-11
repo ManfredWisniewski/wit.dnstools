@@ -1,33 +1,61 @@
 ---
-- name: Install required Python packages
-  pip:
-    name:
-      - requests
-      - dnspython
-    state: present
-  become: true
+- name: Ensure Python dependencies for DNS tasks are installed
+  include_tasks: requirements.yml
 
-- name: flush DNS
+- name: Check if host is Debian-based (via /etc/debian_version)
+  stat:
+    path: /etc/debian_version
+  register: dnstools_debian_release
+  delegate_to: localhost
+
+- name: Detect resolvectl
+  command: bash -lc "command -v resolvectl"
+  register: resolvectl_path
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+
+- name: Detect systemd-resolve
+  command: bash -lc "command -v systemd-resolve"
+  register: systemd_resolve_path
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+
+- name: Flush DNS via resolvectl
   command: resolvectl flush-caches
   become: true
-  when: ansible_os_family == "Debian"
+  when: resolvectl_path.rc == 0
   ignore_errors: true
+  delegate_to: localhost
+
+- name: Flush DNS via systemd-resolve
+  command: systemd-resolve --flush-caches
+  become: true
+  when: resolvectl_path.rc != 0 and systemd_resolve_path.rc == 0
+  ignore_errors: true
+  delegate_to: localhost
 
 - name: check DNS Server
   command: dig @8.8.8.8 +short NS {{ dns_domain }}
   register: dns_servers
   changed_when: false
   when: dns_domain is defined
+  delegate_to: localhost
 
 - name: Display nameservers
   debug:
     var: dns_servers.stdout_lines
-  when: dns_servers is defined
+  when:
+    - dns_servers is defined
+    - wit_devmode | default(false)
+  delegate_to: localhost
 
 - name: Check if using Netcup nameservers
   set_fact:
     is_netcup_dns: "{{ dns_servers.stdout is search('netcup.net') }}"
   when: dns_servers is defined
+  delegate_to: localhost
 
 - name: Include Netcup DNS tasks
   include_tasks: netcup.yml
@@ -36,7 +64,9 @@
 - name: Display warning if no supported DNS provider found
   debug:
     msg: "No supported DNS provider found. Current nameservers: {{ dns_servers.stdout_lines | join(', ') }} Please update DNS manually."
-  when: 
+  when:
     - not is_netcup_dns
     - dns_servers is defined
+  delegate_to: localhost
+
 

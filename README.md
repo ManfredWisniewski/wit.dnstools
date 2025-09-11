@@ -33,6 +33,11 @@ Manage DNS records through the Netcup DNS API.
 - `dns_record_type`: Record type (e.g., 'A')
 - `dns_record_value`: Record value
 
+Notes:
+- This role always executes on localhost (delegated), so it never attempts to SSH to the target host. This avoids issues when the domain still points to an old server.
+
+With `wit.wordpress`, the DNS check/update is included automatically via `roles/wit.wordpress/tasks/01_dns.yml`.
+
 
 ## Sources used for research:
 https://github.com/couchtyp/certbot-dns-schlundtech

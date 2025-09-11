@@ -28,4 +28,6 @@
       - resolved_ip == hostip
     fail_msg: "DNS for {{ inventory_hostname }} ({{ resolved_ip }}) does not match hostip in host_vars ({{ hostip }})!"
     success_msg: "DNS for {{ inventory_hostname }} matches hostip in host_vars."
-  when: not is_ip_address
+  when: 
+    - not is_ip_address
+    - hostip is defined

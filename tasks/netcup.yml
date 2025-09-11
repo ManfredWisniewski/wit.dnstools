@@ -1,3 +1,34 @@
+- name: Validate Netcup credentials
+  assert:
+    that:
+      - (netcup_customer_number | default('')) | length > 0
+      - (netcup_api_key | default('')) | length > 0
+      - (netcup_api_password | default('')) | length > 0
+    fail_msg: "Netcup credentials are missing or empty. Ensure netcup_customer_number, netcup_api_key, and netcup_api_password are set (usually from vault)."
+  delegate_to: localhost
+
+- name: Debug normalized Netcup DNS records (masked)
+  debug:
+    var: netcup_dnsrecords
+  when: wit_devmode | default(false)
+  delegate_to: localhost
+
+- name: Debug Netcup credential lengths (masked)
+  debug:
+    msg:
+      - "customernumber_len={{ ((netcup_customer_number | string) | trim) | length }}"
+      - "apikey_len={{ (netcup_api_key | trim) | length }}"
+      - "apipassword_len={{ (netcup_api_password | trim) | length }}"
+  when: wit_devmode | default(false)
+  delegate_to: localhost
+
+- name: Debug Netcup API key preview (masked)
+  debug:
+    msg:
+      - "apikey_preview={{ (netcup_api_key | trim)[0:4] | default('????') }}...{{ (netcup_api_key | trim)[-4:] | default('????') }}"
+  when: wit_devmode | default(false)
+  delegate_to: localhost
+
 - name: Login to Netcup DNS API
   uri:
     url: "{{ netcup_endpoint }}"
@@ -8,19 +39,141 @@
     body:
       action: "login"
       param:
-        customerNumber: "{{ netcup_customer_number }}"
-        apiKey: "{{ netcup_api_key }}"
-        apiPassword: "{{ netcup_api_password }}"
+        customernumber: "{{ (netcup_customer_number | string) | trim }}"
+        apikey: "{{ netcup_api_key | trim }}"
+        apipassword: "{{ netcup_api_password | trim }}"
     return_content: yes
   register: netcup_login
 #  no_log: true
+  delegate_to: localhost
+  failed_when: "netcup_login.json is not defined or (netcup_login.json.status | default('error')) != 'success'"
 
 - name: Set API session ID
   set_fact:
-    netcup_session_id: "{{ netcup_login.msg }}"
-  when: netcup_login is defined
+    netcup_session_id: "{{ netcup_login.json.responsedata.apisessionid }}"
+  when: netcup_login is defined and (netcup_login.json.status | default('error')) == 'success'
+  delegate_to: localhost
 
 - name: Get DNS records
+  uri:
+    url: "{{ netcup_endpoint }}"
+    method: POST
+    body_format: json
+    body:
+      action: "infoDnsRecords"
+      param:
+        customernumber: "{{ (netcup_customer_number | string) | trim }}"
+        apikey: "{{ netcup_api_key | trim }}"
+        apisessionid: "{{ netcup_session_id | trim }}"
+        domainname: "{{ dns_domain }}"
+    return_content: yes
+  register: dns_records
+  when: dns_domain is defined and (netcup_login.json.status | default('error')) == 'success'
+  delegate_to: localhost
+
+- name: Initialize normalized DNS records list
+  set_fact:
+    netcup_dnsrecords: []
+  when:
+    - dns_records_to_update is defined
+    - (netcup_login.json.status | default('error')) == 'success'
+  delegate_to: localhost
+
+- name: Extract existing DNS records (parsed JSON)
+  set_fact:
+    netcup_existing_records: "{{ (dns_records.json.responsedata.dnsrecords | default([])) }}"
+  when: dns_records is defined and dns_records.json is defined
+  delegate_to: localhost
+
+- name: Build update entries for desired records (attach id when matching exists)
+  set_fact:
+    netcup_update_records: "{{ (netcup_update_records | default([])) + [ tmp_update ] }}"
+  loop: "{{ dns_records_to_update }}"
+  vars:
+    match_id: "{{ (netcup_existing_records | default([])
+                    | selectattr('hostname','equalto', (item.hostname | default(''))) 
+                    | selectattr('type','equalto', (item.type | upper)) 
+                    | map(attribute='id') | list | first | default('')) }}"
+    tmp_update:
+      id: "{{ match_id | default('') | int if (match_id | default('') | string) | length > 0 else '' }}"
+      hostname: "{{ item.hostname | default('') }}"
+      type: "{{ item.type | upper }}"
+      destination: "{{ item.destination | default('') }}"
+      priority: "{{ item.priority | default(0) }}"
+      ttl: "{{ item.ttl | default(300) }}"
+  when:
+    - dns_records_to_update is defined
+  delegate_to: localhost
+
+- name: Identify stale duplicates (same hostname/type with different destination)
+  debug:
+    msg: "Skipping deletion of stale duplicates as requested"
+  vars:
+    desired_for_host_type: "{{ (dns_records_to_update | selectattr('hostname','equalto', rec.hostname)
+                                                     | selectattr('type', 'equalto', rec.type | lower)
+                                                     | list) }}"
+  loop: "{{ netcup_existing_records | default([]) }}"
+  loop_control:
+    loop_var: rec
+  when:
+    - desired_for_host_type | length > 0
+    - rec.hostname == '@'
+    - rec.type == 'A'
+    - (desired_for_host_type[0].destination | default('')) != (rec.destination | default(''))
+  delegate_to: localhost
+
+## Do not delete conflicting record types automatically
+
+ 
+
+- name: Compose final DNS records payload
+  set_fact:
+    netcup_dnsrecords: "{{ (netcup_update_records | default([])) 
+                             | rejectattr('hostname','equalto','')
+                             | rejectattr('type','equalto','')
+                             | rejectattr('destination','equalto','')
+                             | list }}"
+  delegate_to: localhost
+
+- name: Debug final DNS payload (masked)
+  debug:
+    var: netcup_dnsrecords
+  when: wit_devmode | default(false)
+  delegate_to: localhost
+
+- name: Update DNS records
+  uri:
+    url: "{{ netcup_endpoint }}"
+    method: POST
+    body_format: json
+    body:
+      action: "updateDnsRecords"
+      param:
+        customernumber: "{{ (netcup_customer_number | string) | trim }}"
+        apikey: "{{ netcup_api_key | trim }}"
+        apisessionid: "{{ netcup_session_id | trim }}"
+        domainname: "{{ dns_domain }}"
+        dnsrecordset:
+          dnsrecords: "{{ netcup_dnsrecords }}"
+    return_content: yes
+  register: dns_update_result
+  when: 
+    - dns_domain is defined
+    - dns_records_to_update is defined
+    - (netcup_login.json.status | default('error')) == 'success'
+  delegate_to: localhost
+  changed_when: "'\"status\":\"success\"' in (dns_update_result.content | default(''))"
+  failed_when: "dns_update_result is failed or ('\"status\":\"error\"' in (dns_update_result.content | default('')))"
+
+- name: Display DNS update result
+  debug:
+    var: dns_update_result
+  when:
+    - dns_update_result is defined
+    - wit_devmode | default(false)
+  delegate_to: localhost
+
+- name: Fetch DNS records after update (for visibility)
   uri:
     url: "{{ netcup_endpoint }}"
     method: POST
@@ -33,32 +186,26 @@
         apisessionid: "{{ netcup_session_id }}"
         domainname: "{{ dns_domain }}"
     return_content: yes
-  register: dns_records
-  when: dns_domain is defined
+  register: dns_records_after
+  when: dns_domain is defined and (netcup_login.json.status | default('error')) == 'success'
+  delegate_to: localhost
 
-- name: Update DNS records
-  uri:
-    url: "{{ netcup_endpoint }}"
-    method: POST
-    body_format: json
-    body:
-      action: "updateDnsRecords"
-      param:
-        customernumber: "{{ netcup_customer_number }}"
-        apikey: "{{ netcup_api_key }}"
-        apisessionid: "{{ netcup_session_id }}"
-        domainname: "{{ dns_domain }}"
-        dnsrecords: "{{ dns_records_to_update }}"
-    return_content: yes
-  register: dns_update_result
-  when: 
-    - dns_domain is defined
-    - dns_records_to_update is defined
+- name: Parse DNS records JSON
+  set_fact:
+    netcup_dns_records_list: "{{ (dns_records_after.json.responsedata.dnsrecords | default([])) if (dns_records_after.json is defined) else ((dns_records_after.content | default('{}')) | from_json).responsedata.dnsrecords | default([]) }}"
+  when:
+    - dns_records_after is defined
+    - wit_devmode | default(false)
+  delegate_to: localhost
 
-- name: Display DNS update result
+- name: Show DNS records after update (readable)
   debug:
-    var: dns_update_result
-  when: dns_update_result is defined
+    msg: "{{ item.type }} {{ item.hostname }} -> {{ item.destination }} (prio {{ item.priority }}, ttl {{ item.ttl | default('') }}, id {{ item.id }}, state {{ item.state }})"
+  loop: "{{ netcup_dns_records_list }}"
+  when:
+    - netcup_dns_records_list is defined
+    - wit_devmode | default(false)
+  delegate_to: localhost
 
 - name: Logout from Netcup DNS API
   uri:
@@ -68,9 +215,10 @@
     body:
       action: "logout"
       param:
-        customernumber: "{{ netcup_customer_number }}"
-        apikey: "{{ netcup_api_key }}"
-        apisessionid: "{{ netcup_session_id }}"
+        customernumber: "{{ (netcup_customer_number | string) | trim }}"
+        apikey: "{{ netcup_api_key | trim }}"
+        apisessionid: "{{ netcup_session_id | trim }}"
     return_content: yes
   when: netcup_session_id is defined
 #  no_log: true
+  delegate_to: localhost

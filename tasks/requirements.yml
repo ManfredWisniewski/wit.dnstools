@@ -1,9 +1,30 @@
 ---
-#2DO add python role and PIP
-- name: Install required Python packages
+# Prefer OS packages to avoid PEP 668 issues
+- name: Check if host is Debian-based (via /etc/debian_version)
+  stat:
+    path: /etc/debian_version
+  register: dnstools_debian_release
+  delegate_to: localhost
+
+- name: Install Python libs via apt (Debian/Ubuntu)
+  apt:
+    name:
+      - python3-requests
+      - python3-dnspython
+    state: present
+    update_cache: yes
+  become: true
+  when: dnstools_debian_release.stat.exists | default(false)
+  delegate_to: localhost
+
+# Optional: enable pip install if explicitly requested
+- name: Install required Python packages via pip (override)
   pip:
     name:
       - requests
       - dnspython
+    extra_args: "--break-system-packages"
     state: present
   become: true
+  when: dnstools_use_pip | default(false)
+  delegate_to: localhost
