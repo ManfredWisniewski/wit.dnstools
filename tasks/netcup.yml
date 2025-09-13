@@ -10,7 +10,9 @@
 - name: Debug normalized Netcup DNS records (masked)
   debug:
     var: netcup_dnsrecords
-  when: wit_devmode | default(false)
+  when:
+    - wit_devmode | default(false)
+    - netcup_dnsrecords is defined
   delegate_to: localhost
 
 - name: Debug Netcup credential lengths (masked)
