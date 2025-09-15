@@ -92,9 +92,16 @@
     netcup_update_records: "{{ (netcup_update_records | default([])) + [ tmp_update ] }}"
   loop: "{{ dns_records_to_update }}"
   vars:
+    is_delete: "{{ (item.deleterecord | default('false')) | string | lower == 'true' }}"
+    # For deletions, match by hostname/type/destination to target the exact record
     match_id: "{{ (netcup_existing_records | default([])
-                    | selectattr('hostname','equalto', (item.hostname | default(''))) 
-                    | selectattr('type','equalto', (item.type | upper)) 
+                    | selectattr('hostname','equalto', (item.hostname | default('')))
+                    | selectattr('type','equalto', (item.type | upper))
+                    | selectattr('destination','equalto', (item.destination | default('')))
+                    | map(attribute='id') | list | first | default('')) if is_delete else
+                  (netcup_existing_records | default([])
+                    | selectattr('hostname','equalto', (item.hostname | default('')))
+                    | selectattr('type','equalto', (item.type | upper))
                     | map(attribute='id') | list | first | default('')) }}"
     tmp_update:
       id: "{{ match_id | default('') | int if (match_id | default('') | string) | length > 0 else '' }}"
@@ -103,6 +110,8 @@
       destination: "{{ item.destination | default('') }}"
       priority: "{{ item.priority | default(0) }}"
       ttl: "{{ item.ttl | default(300) }}"
+      deleterecord: "{{ is_delete | ternary(true, false) }}"
+      state: "{{ item.state | default('yes') }}"
   when:
     - dns_records_to_update is defined
   delegate_to: localhost
