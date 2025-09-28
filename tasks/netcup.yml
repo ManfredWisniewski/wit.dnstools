@@ -7,6 +7,13 @@
     fail_msg: "Netcup credentials are missing or empty. Ensure netcup_customer_number, netcup_api_key, and netcup_api_password are set (usually from vault)."
   delegate_to: localhost
 
+- name: Normalize Netcup credentials
+  set_fact:
+    netcup_customer_number: "{{ (netcup_customer_number | string) | regex_replace('\\s+', '') | trim }}"
+    netcup_api_key: "{{ (netcup_api_key | string) | regex_replace('\\s+', '') | trim }}"
+    netcup_api_password: "{{ (netcup_api_password | string) | regex_replace('\\s+', '') | trim }}"
+  delegate_to: localhost
+
 - name: Debug normalized Netcup DNS records (masked)
   debug:
     var: netcup_dnsrecords
@@ -49,11 +56,23 @@
 #  no_log: true
   delegate_to: localhost
   failed_when: "netcup_login.json is not defined or (netcup_login.json.status | default('error')) != 'success'"
+  throttle: 1
+
+- name: Short pause after Netcup login
+  pause:
+    seconds: 1
+  when: netcup_login is defined and (netcup_login.json.status | default('error')) == 'success'
+  delegate_to: localhost
 
 - name: Set API session ID
   set_fact:
     netcup_session_id: "{{ netcup_login.json.responsedata.apisessionid }}"
   when: netcup_login is defined and (netcup_login.json.status | default('error')) == 'success'
+
+- name: Debug session id length (masked)
+  debug:
+    msg: "session_id_len={{ (netcup_session_id | default('') | trim) | length }}"
+  when: wit_devmode | default(false)
   delegate_to: localhost
 
 - name: Get DNS records
@@ -61,17 +80,20 @@
     url: "{{ netcup_endpoint }}"
     method: POST
     body_format: json
+    headers:
+      Content-Type: "application/json"
     body:
       action: "infoDnsRecords"
       param:
         customernumber: "{{ (netcup_customer_number | string) | trim }}"
         apikey: "{{ netcup_api_key | trim }}"
-        apisessionid: "{{ netcup_session_id | trim }}"
+        apisessionid: "{{ netcup_session_id | default('') | trim }}"
         domainname: "{{ dns_domain }}"
     return_content: yes
   register: dns_records
   when: dns_domain is defined and (netcup_login.json.status | default('error')) == 'success'
   delegate_to: localhost
+  throttle: 1
 
 - name: Initialize normalized DNS records list
   set_fact:
@@ -152,17 +174,28 @@
   when: wit_devmode | default(false)
   delegate_to: localhost
 
+- name: Debug update call credentials (masked)
+  debug:
+    msg:
+      - "apikey_len={{ ((netcup_api_key | string) | trim) | length }}"
+      - "apikey_preview={{ (netcup_api_key | trim)[0:4] | default('????') }}...{{ (netcup_api_key | trim)[-4:] | default('????') }}"
+      - "session_id_len={{ (netcup_session_id | default('') | trim) | length }}"
+  when: wit_devmode | default(false)
+  delegate_to: localhost
+
 - name: Update DNS records
   uri:
     url: "{{ netcup_endpoint }}"
     method: POST
     body_format: json
+    headers:
+      Content-Type: "application/json"
     body:
       action: "updateDnsRecords"
       param:
         customernumber: "{{ (netcup_customer_number | string) | trim }}"
-        apikey: "{{ netcup_api_key | trim }}"
-        apisessionid: "{{ netcup_session_id | trim }}"
+        apikey: "{{ (netcup_api_key | string) | replace('\n','') | replace('\r','') | regex_replace('\\s+$','') | trim }}"
+        apisessionid: "{{ netcup_session_id | default('') | trim }}"
         domainname: "{{ dns_domain }}"
         dnsrecordset:
           dnsrecords: "{{ netcup_dnsrecords }}"
@@ -173,14 +206,14 @@
     - dns_records_to_update is defined
     - (netcup_login.json.status | default('error')) == 'success'
   delegate_to: localhost
-  changed_when: "'\"status\":\"success\"' in (dns_update_result.content | default(''))"
-  failed_when: "dns_update_result is failed or ('\"status\":\"error\"' in (dns_update_result.content | default('')))"
+  changed_when: dns_update_result.json is defined and (dns_update_result.json.status | default('error')) == 'success'
+  failed_when: dns_update_result is failed or (dns_update_result.json is defined and (dns_update_result.json.status | default('success')) != 'success')
+  throttle: 1
 
 - name: Display DNS update result
   debug:
     var: dns_update_result
   when:
-    - dns_update_result is defined
     - wit_devmode | default(false)
   delegate_to: localhost
 
@@ -189,17 +222,20 @@
     url: "{{ netcup_endpoint }}"
     method: POST
     body_format: json
+    headers:
+      Content-Type: "application/json"
     body:
       action: "infoDnsRecords"
       param:
         customernumber: "{{ netcup_customer_number }}"
         apikey: "{{ netcup_api_key }}"
-        apisessionid: "{{ netcup_session_id }}"
+        apisessionid: "{{ netcup_session_id | default('') }}"
         domainname: "{{ dns_domain }}"
     return_content: yes
   register: dns_records_after
   when: dns_domain is defined and (netcup_login.json.status | default('error')) == 'success'
   delegate_to: localhost
+  throttle: 1
 
 - name: Parse DNS records JSON
   set_fact:
@@ -223,6 +259,8 @@
     url: "{{ netcup_endpoint }}"
     method: POST
     body_format: json
+    headers:
+      Content-Type: "application/json"
     body:
       action: "logout"
       param:
@@ -233,3 +271,4 @@
   when: netcup_session_id is defined
 #  no_log: true
   delegate_to: localhost
+  throttle: 1

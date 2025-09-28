@@ -2,6 +2,29 @@
 - name: Ensure Python dependencies for DNS tasks are installed
   include_tasks: requirements.yml
 
+- name: Early Netcup credential check
+  uri:
+    url: "{{ netcup_endpoint }}"
+    method: POST
+    body_format: json
+    headers:
+      Content-Type: "application/json"
+    body:
+      action: "login"
+      clientrequestid: "{{ inventory_hostname }}-early-login-{{ ansible_date_time.epoch | default('0') }}"
+      param:
+        customernumber: "{{ (netcup_customer_number | string) | trim }}"
+        apikey: "{{ netcup_api_key | trim }}"
+        apipassword: "{{ netcup_api_password | trim }}"
+    return_content: yes
+  register: netcup_early_login
+  failed_when: "netcup_early_login.json is not defined or (netcup_early_login.json.status | default('error')) != 'success'"
+  when:
+    - (netcup_customer_number | default('')) | length > 0
+    - (netcup_api_key | default('')) | length > 0
+    - (netcup_api_password | default('')) | length > 0
+  delegate_to: localhost
+
 - name: Check if host is Debian-based (via /etc/debian_version)
   stat:
     path: /etc/debian_version
