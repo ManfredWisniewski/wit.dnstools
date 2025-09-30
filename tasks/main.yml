@@ -59,54 +59,67 @@
   ignore_errors: true
   delegate_to: localhost
 
-- name: check DNS Server
-  command: dig @8.8.8.8 +short NS {{ dns_domain }}
-  register: dns_servers
-  changed_when: false
-  when: dns_domain is defined
-  delegate_to: localhost
-
-- name: Display nameservers
-  debug:
-    var: dns_servers.stdout_lines
-  when:
-    - dns_servers is defined
-    - wit_devmode | default(false)
-  delegate_to: localhost
-
-- name: Check if using Netcup nameservers
+- name: Normalize dns_domain into a list
   set_fact:
-    is_netcup_dns: "{{ dns_servers.stdout is search('netcup.net') }}"
-  when: dns_servers is defined
+    dns_domain_list: >-
+      {{ (dns_domain if dns_domain is iterable and dns_domain is not string else [dns_domain])
+         if (dns_domain is defined and (dns_domain | length) > 0)
+         else [] }}
   delegate_to: localhost
 
-- name: Include Netcup DNS tasks
+- name: Check DNS servers for each domain
+  command: dig @8.8.8.8 +short NS {{ item }}
+  register: _dns_servers_checks
+  changed_when: false
+  delegate_to: localhost
+  loop: "{{ dns_domain_list }}"
+
+- name: Display nameservers per domain (dev mode)
+  debug:
+    var: domain_check.stdout_lines
+  when: wit_devmode | default(false)
+  loop: "{{ _dns_servers_checks.results | default([]) }}"
+  loop_control:
+    loop_var: domain_check
+    label: "{{ domain_check.item }}"
+  delegate_to: localhost
+
+- name: Include Netcup DNS tasks for domains using Netcup
   include_tasks: netcup.yml
-  when: is_netcup_dns | bool
+  vars:
+    dns_domain: "{{ domain_check.item }}"
+  when: (domain_check.stdout | default('')) is search('netcup.net')
+  loop: "{{ _dns_servers_checks.results | default([]) }}"
+  loop_control:
+    loop_var: domain_check
 
 - name: Build list of changed DNS records
   set_fact:
-    dnstools_changed_records: "{{ (dnstools_changed_records | default([])) + [ item ] }}"
+    dnstools_changed_records: "{{ (dnstools_changed_records | default([])) + [ rec ] }}"
   loop: "{{ dns_records_to_update | default([]) }}"
+  loop_control:
+    loop_var: rec
   when:
-    - is_netcup_dns | bool
+    - (is_netcup_dns | default(false)) | bool
     - dns_records_to_update is defined
     - netcup_existing_records is defined
     - (
         (netcup_existing_records
-          | selectattr('hostname','equalto', (item.hostname | default('')))
-          | selectattr('type','equalto', (item.type | upper))
-          | selectattr('destination','equalto', (item.destination | default('')))
+          | selectattr('hostname','equalto', (rec.hostname | default('')))
+          | selectattr('type','equalto', (rec.type | upper))
+          | selectattr('destination','equalto', (rec.destination | default('')))
           | list | length)
       ) == 0
   delegate_to: localhost
 
 - name: Build formatted change lines
   set_fact:
-    dnstools_change_lines: "{{ (dnstools_change_lines | default([])) + [ '%-5s %-25s %-18s %s' | format(item.type | upper, item.hostname, item.destination, (item.ttl | default(300))) ] }}"
+    dnstools_change_lines: "{{ (dnstools_change_lines | default([])) + [ '%-5s %-25s %-18s %s' | format(ch.type | upper, ch.hostname, ch.destination, (ch.ttl | default(300))) ] }}"
   loop: "{{ dnstools_changed_records | default([]) }}"
+  loop_control:
+    loop_var: ch
   when:
-    - is_netcup_dns | bool
+    - (is_netcup_dns | default(false)) | bool
     - dnstools_changed_records is defined
     - (dnstools_changed_records | length) > 0
   delegate_to: localhost
@@ -114,32 +127,38 @@
 # Collect and print deletions
 - name: Build list of DNS records marked for deletion
   set_fact:
-    dnstools_deleted_records: "{{ (dnstools_deleted_records | default([])) + [ item ] }}"
+    dnstools_deleted_records: "{{ (dnstools_deleted_records | default([])) + [ recdel ] }}"
   loop: "{{ dns_records_to_update | default([]) }}"
+  loop_control:
+    loop_var: recdel
   when:
     - wit_devmode | default(false)
-    - is_netcup_dns | bool
+    - (is_netcup_dns | default(false)) | bool
     - dns_records_to_update is defined
-    - (item.deleterecord | default('false')) | string | lower == 'true'
+    - (recdel.deleterecord | default('false')) | string | lower == 'true'
   delegate_to: localhost
 
 - name: Build formatted deletion lines
   set_fact:
-    dnstools_delete_lines: "{{ (dnstools_delete_lines | default([])) + [ '%-5s %-25s %-18s %s' | format(item.type | upper, item.hostname, item.destination, (item.ttl | default(300))) ] }}"
+    dnstools_delete_lines: "{{ (dnstools_delete_lines | default([])) + [ '%-5s %-25s %-18s %s' | format(dl.type | upper, dl.hostname, dl.destination, (dl.ttl | default(300))) ] }}"
   loop: "{{ dnstools_deleted_records | default([]) }}"
+  loop_control:
+    loop_var: dl
   when:
     - wit_devmode | default(false)
-    - is_netcup_dns | bool
+    - (is_netcup_dns | default(false)) | bool
     - dnstools_deleted_records is defined
     - (dnstools_deleted_records | length) > 0
   delegate_to: localhost
 
 - name: Summary of DNS deletions
   debug:
-    msg: "{{ item }}"
+    msg: "{{ line }}"
   loop: "{{ dnstools_delete_lines | default([]) }}"
+  loop_control:
+    loop_var: line
   when:
-    - is_netcup_dns | bool
+    - (is_netcup_dns | default(false)) | bool
     - dnstools_delete_lines is defined
     - (dnstools_delete_lines | length) > 0
   loop_control:
@@ -148,10 +167,12 @@
 
 - name: Summary of DNS changes (created/updated)
   debug:
-    msg: "{{ item }}"
+    msg: "{{ line }}"
   loop: "{{ dnstools_change_lines | default([]) }}"
+  loop_control:
+    loop_var: line
   when:
-    - is_netcup_dns | bool
+    - (is_netcup_dns | default(false)) | bool
     - dnstools_change_lines is defined
     - (dnstools_change_lines | length) > 0
   loop_control:
@@ -162,7 +183,7 @@
   debug:
     msg: "No supported DNS provider found. Current nameservers: {{ dns_servers.stdout_lines | join(', ') }} Please update DNS manually."
   when:
-    - not is_netcup_dns
+    - (is_netcup_dns | default(false)) | bool == false
     - dns_servers is defined
   delegate_to: localhost
 
