@@ -68,6 +68,7 @@
   set_fact:
     netcup_session_id: "{{ netcup_login.json.responsedata.apisessionid }}"
   when: netcup_login is defined and (netcup_login.json.status | default('error')) == 'success'
+  delegate_to: localhost
 
 - name: Normalize API session ID format
   set_fact:
@@ -213,6 +214,7 @@
       - "apikey_len={{ ((netcup_api_key | string) | trim) | length }}"
       - "apikey_preview={{ (netcup_api_key | trim)[0:4] | default('????') }}...{{ (netcup_api_key | trim)[-4:] | default('????') }}"
       - "session_id_len={{ (netcup_session_id | default('') | trim) | length }}"
+      - "session_id_preview={{ (netcup_session_id | default('') | trim)[0:8] | default('????') }}...{{ (netcup_session_id | default('') | trim)[-8:] | default('????') }}"
   when: wit_devmode | default(false)
   delegate_to: localhost
 
@@ -227,8 +229,8 @@
       action: "updateDnsRecords"
       param:
         customernumber: "{{ (netcup_customer_number | string) | trim }}"
-        apikey: "{{ (netcup_api_key | string) | replace('\n','') | replace('\r','') | regex_replace('\\s+$','') | trim }}"
-        apisessionid: "{{ (netcup_session_id | default('') | string) | trim }}"
+        apikey: "{{ netcup_api_key | trim }}"
+        apisessionid: "{{ netcup_session_id | trim }}"
         domainname: "{{ dns_domain }}"
         dnsrecordset:
           dnsrecords: "{{ netcup_dnsrecords }}"
