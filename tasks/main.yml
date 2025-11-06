@@ -157,12 +157,11 @@
   loop: "{{ dnstools_delete_lines | default([]) }}"
   loop_control:
     loop_var: line
+    label: ""
   when:
     - (is_netcup_dns | default(false)) | bool
     - dnstools_delete_lines is defined
     - (dnstools_delete_lines | length) > 0
-  loop_control:
-    label: ""
   delegate_to: localhost
 
 - name: Summary of DNS changes (created/updated)
@@ -171,12 +170,11 @@
   loop: "{{ dnstools_change_lines | default([]) }}"
   loop_control:
     loop_var: line
+    label: ""
   when:
     - (is_netcup_dns | default(false)) | bool
     - dnstools_change_lines is defined
     - (dnstools_change_lines | length) > 0
-  loop_control:
-    label: ""
   delegate_to: localhost
 
 - name: Display warning if no supported DNS provider found
