@@ -31,3 +31,5 @@
   when: 
     - not is_ip_address
     - hostip is defined
+    - (wp_copy | default('none')) == 'none'
+
