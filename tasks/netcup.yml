@@ -208,6 +208,37 @@
   when: wit_devmode | default(false)
   delegate_to: localhost
 
+- name: Login to Netcup DNS API immediately before update
+  uri:
+    url: "{{ netcup_endpoint }}"
+    method: POST
+    body_format: json
+    headers:
+      Content-Type: "application/json"
+    body:
+      action: "login"
+      param:
+        customernumber: "{{ (netcup_customer_number | string) | trim }}"
+        apikey: "{{ netcup_api_key | trim }}"
+        apipassword: "{{ netcup_api_password | trim }}"
+    return_content: yes
+  register: netcup_update_login
+  delegate_to: localhost
+  failed_when: "netcup_update_login.json is not defined or (netcup_update_login.json.status | default('error')) != 'success'"
+  when:
+    - dns_domain is defined
+    - dns_records_to_update is defined
+    - (netcup_login.json.status | default('error')) == 'success'
+  throttle: 1
+
+- name: Set API session ID for DNS update
+  set_fact:
+    netcup_session_id: "{{ (netcup_update_login.json.responsedata.apisessionid | string) | trim }}"
+  delegate_to: localhost
+  when:
+    - netcup_update_login is defined
+    - (netcup_update_login.json.status | default('error')) == 'success'
+
 - name: Debug update call credentials (masked)
   debug:
     msg:
