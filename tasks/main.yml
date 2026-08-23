@@ -185,4 +185,13 @@
     - dns_servers is defined
   delegate_to: localhost
 
+- name: Configure Netcup domain export
+  ansible.builtin.include_tasks:
+    file: domain-export.yml
+    apply:
+      tags:
+        - domain-export
+  tags:
+    - domain-export
+  when: netcup_domain_export_enabled | default(false) | bool
 

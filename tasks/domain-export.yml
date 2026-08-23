@@ -1,0 +1,75 @@
+---
+
+- name: Ensure domain export target directory exists
+  ansible.builtin.file:
+    path: "{{ file_target }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ensure Netcup domain export output directory exists
+  ansible.builtin.file:
+    path: "{{ netcup_domain_export_output_dir }}"
+    state: directory
+
+- name: Ensure Netcup domain export credentials directory exists
+  ansible.builtin.file:
+    path: "{{ netcup_domain_export_credentials_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create placeholder Netcup domain export credentials file
+  ansible.builtin.copy:
+    dest: "{{ netcup_domain_export_credentials_file }}"
+    content: |
+      # Replace these placeholder values with Netcup reseller API credentials.
+      NETCUP_CUSTOMER_NUMBER=CHANGE_ME
+      NETCUP_API_KEY=CHANGE_ME
+      NETCUP_API_PASSWORD=CHANGE_ME
+    force: false
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Install Netcup domain export script
+  ansible.builtin.template:
+    src: export-netcup-domains.py.j2
+    dest: "{{ file_target }}/{{ netcup_domain_export_script_filename }}"
+    owner: "{{ file_ownership.split('/')[0] }}"
+    group: "{{ file_ownership.split('/')[1] }}"
+    mode: '0750'
+
+- name: Create Netcup domain export Markdown document
+  ansible.builtin.file:
+    path: >-
+      {{ netcup_domain_export_output_dir }}/{{ netcup_domain_export_filename }}
+    state: touch
+    owner: "{{ file_ownership.split('/')[0] }}"
+    group: "{{ file_ownership.split('/')[1] }}"
+    mode: '{{ netcup_domain_export_file_mode }}'
+    access_time: preserve
+    modification_time: preserve
+
+- name: Configure Netcup domain export cron job
+  ansible.builtin.cron:
+    name: "Export Netcup domains and subdomains"
+    user: root
+    minute: "{{ netcup_domain_export_cron_minute }}"
+    hour: "{{ netcup_domain_export_cron_hour }}"
+    day: "{{ netcup_domain_export_cron_day }}"
+    month: "{{ netcup_domain_export_cron_month }}"
+    weekday: "{{ netcup_domain_export_cron_weekday }}"
+    job: >-
+      /usr/bin/python3
+      {{ file_target }}/{{ netcup_domain_export_script_filename }}
+      >/dev/null 2>&1
+
+- name: Run Netcup domain export script once after deployment
+  ansible.builtin.command:
+    cmd: >-
+      /usr/bin/python3
+      {{ file_target }}/{{ netcup_domain_export_script_filename }}
+  changed_when: true

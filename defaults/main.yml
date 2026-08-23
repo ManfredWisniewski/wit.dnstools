@@ -5,7 +5,23 @@ netcup_customer_number: ""
 netcup_api_key: ""
 netcup_api_password: ""
 
-netcup_endpoint: "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON"
+netcup_endpoint: >-
+  https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON
+
+# Domain export is opt-in and requires Netcup reseller API access
+netcup_domain_export_enabled: false
+file_target: "/root/wit.ansible"
+file_ownership: "www-data/www-data"
+netcup_domain_export_filename: "domains.md"
+netcup_domain_export_output_dir: "{{ file_target }}"
+netcup_domain_export_file_mode: "0644"
+netcup_domain_export_script_filename: "export-netcup-domains.py"
+netcup_domain_export_credentials_file: "{{ file_target }}/netcup.env"
+netcup_domain_export_cron_minute: "15"
+netcup_domain_export_cron_hour: "3"
+netcup_domain_export_cron_day: "*"
+netcup_domain_export_cron_month: "*"
+netcup_domain_export_cron_weekday: "*"
 
 # Default domain to work with
 dns_domain: ""
