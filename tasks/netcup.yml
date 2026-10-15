@@ -132,6 +132,7 @@
   set_fact:
     netcup_dnsrecords: []
     netcup_update_records: []
+    netcup_used_ids: []
   when:
     - dns_records_to_update is defined
     - (netcup_login.json.status | default('error')) == 'success'
@@ -146,19 +147,38 @@
 - name: Build update entries for desired records (attach id when matching exists)
   set_fact:
     netcup_update_records: "{{ (netcup_update_records | default([])) + [ tmp_update ] }}"
+    netcup_used_ids: "{{ (netcup_used_ids | default([]))
+                         + ([ match_id, (match_id | string) ]
+                            if ((match_id | string) | length > 0) else []) }}"
   loop: "{{ dns_records_to_update }}"
   vars:
     is_delete: "{{ (item.deleterecord | default('false')) | string | lower == 'true' }}"
-    # For deletions, match by hostname/type/destination to target the exact record
-    match_id: "{{ (netcup_existing_records | default([])
-                    | selectattr('hostname','equalto', (item.hostname | default('')))
-                    | selectattr('type','equalto', (item.type | upper))
-                    | selectattr('destination','equalto', (item.destination | default('')))
-                    | map(attribute='id') | list | first | default('')) if is_delete else
-                  (netcup_existing_records | default([])
-                    | selectattr('hostname','equalto', (item.hostname | default('')))
-                    | selectattr('type','equalto', (item.type | upper))
-                    | map(attribute='id') | list | first | default('')) }}"
+    same_name_type: >-
+      {{ netcup_existing_records | default([])
+         | selectattr('hostname','equalto', (item.hostname | default('')))
+         | selectattr('type','equalto', (item.type | upper))
+         | list }}
+    # Exclude records already claimed by a previous desired entry
+    free_name_type: >-
+      {{ same_name_type
+         | rejectattr('id', 'in', netcup_used_ids | default([]))
+         | list }}
+    # For deletions, match by hostname/type/destination to target the exact record.
+    # For normal records, prefer an exact destination match so that multiple
+    # records sharing hostname/type (e.g. several TXT records on "@") update
+    # their own record instead of overwriting an unrelated one.
+    exact_id: >-
+      {{ free_name_type
+         | selectattr('destination','equalto', (item.destination | default('')))
+         | map(attribute='id') | list | first | default('') }}
+    # Without an exact match, only update in place when a single unmatched
+    # record of that hostname/type remains; otherwise send no id so Netcup
+    # creates a new record instead of clobbering an arbitrary existing one.
+    match_id: >-
+      {{ exact_id if ((exact_id | string) | length) > 0 else
+         ('' if is_delete else
+          (free_name_type | map(attribute='id') | list | first
+           if (free_name_type | length) == 1 else '')) }}
     tmp_update:
       id: "{{ (match_id | default('')) if ((match_id | default('') | string) | length > 0) else omit }}"
       hostname: "{{ item.hostname | default('') }}"

@@ -163,9 +163,17 @@ expand those previews.
 
 When building an update object:
 
-- Normal records find an existing ID by `hostname` and uppercased `type`.
+- Normal records prefer an exact match on `hostname`, uppercased `type`, and
+  `destination`, and attach that record's ID for an in-place update.
+- Without an exact match, a normal record attaches an ID only when exactly
+  one still-unmatched record of that `hostname`/`type` exists; otherwise it is
+  sent without an ID so Netcup creates a new record. This keeps multiple
+  desired records with the same `hostname`/`type` (for example several `TXT`
+  records on `@`) from overwriting each other or unrelated records.
+- `netcup_used_ids` tracks IDs already claimed by earlier desired entries so
+  each existing record is matched at most once per run.
 - Deletion records find an existing ID by `hostname`, type, and exact
-  `destination`.
+  `destination` among still-unmatched records only.
 - A matching ID is included; otherwise the object is sent without an ID.
 - `deleterecord` is converted to a boolean in `tmp_update`.
 - Empty hostname, type, and destination entries are removed from the final

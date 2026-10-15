@@ -169,8 +169,16 @@ dns_records_to_update:
 Before constructing the update payload, the role retrieves the existing
 Netcup records.
 
-- A normal record is matched by `hostname` and uppercased `type`; the matching
-  record ID is attached to the update object.
+- A normal record first looks for an exact match by `hostname`, uppercased
+  `type`, and `destination`; the matching record ID is attached so the record
+  is updated in place.
+- When no exact match exists, the record ID is only attached when exactly one
+  still-unmatched record of the same `hostname`/`type` remains. Otherwise the
+  record is sent without an ID so Netcup creates it. This prevents desired
+  records that share a `hostname`/`type` pair (for example several `TXT`
+  records on `@`) from overwriting each other or unrelated existing records.
+- Each existing record ID is claimed at most once per run; records already
+  matched by a previous desired entry are excluded from further matching.
 - A record with `deleterecord` set to `true` is matched by `hostname`, type, and
   `destination` before its ID is attached.
 - Records without a matching ID are sent without an ID so Netcup can create
