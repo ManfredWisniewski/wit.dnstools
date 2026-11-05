@@ -55,7 +55,7 @@
         apipassword: "{{ netcup_api_password | trim }}"
     return_content: yes
   register: netcup_login
-#  no_log: true
+  no_log: true
   delegate_to: localhost
   failed_when: "netcup_login.json is not defined or (netcup_login.json.status | default('error')) != 'success'"
   throttle: 1
@@ -355,6 +355,6 @@
         apisessionid: "{{ netcup_session_id | trim }}"
     return_content: yes
   when: netcup_session_id is defined
-#  no_log: true
+  no_log: true
   delegate_to: localhost
   throttle: 1
