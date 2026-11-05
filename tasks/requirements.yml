@@ -17,6 +17,10 @@
   become: true
   when: dnstools_debian_release.stat.exists | default(false)
   delegate_to: localhost
+  # riki runs dnstools for several inventory hosts in parallel; all of them
+  # delegate to localhost, so the apt run must happen only once or the
+  # hosts fight over the apt lock.
+  run_once: true
 
 # Optional: enable pip install if explicitly requested
 - name: Install required Python packages via pip (override)
@@ -29,3 +33,4 @@
   become: true
   when: dnstools_use_pip | default(false)
   delegate_to: localhost
+  run_once: true
